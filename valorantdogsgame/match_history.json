@@ -165,4 +165,25 @@
         "season": "2026-04",
         "time": "2026-04-30T22:37:43.045381"
     }
+    ,
+{
+  "username": "cepsooep",
+  "mode": "pixel",
+  "score": 8,
+  "seconds": null,
+  "rank_tier": "radiant",
+  "rank_name": "Radiant Dawg Reaper",
+  "season": "2026-05",
+  "time": "2026-05-01T00:01:00"
+},
+{
+  "username": "cepsooep",
+  "mode": "timer",
+  "score": 8,
+  "seconds": 39.85,
+  "rank_tier": "radiant",
+  "rank_name": "Radiant Dawg Reaper",
+  "season": "2026-05",
+  "time": "2026-05-01T00:01:10"
+}
 ]
