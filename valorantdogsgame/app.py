@@ -1265,10 +1265,7 @@ def migrate_old_leaderboard_format():
                     best[key] = entry
 
     save_json(LEADERBOARD_FILE, list(best.values()))
-    print("Leaderboard migrated and cleaned.")
 
-migrate_old_leaderboard_to_match_history()
-migrate_old_leaderboard_format()
 
 if __name__ == "__main__":
  
