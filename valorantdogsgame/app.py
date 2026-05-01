@@ -1236,8 +1236,9 @@ def migrate_old_leaderboard_format():
     save_json(LEADERBOARD_FILE, list(best.values()))
     print("Leaderboard migrated and cleaned.")
 
+migrate_old_leaderboard_to_match_history()
+migrate_old_leaderboard_format()
 
 if __name__ == "__main__":
-    migrate_old_leaderboard_to_match_history()
-    migrate_old_leaderboard_format()
+ 
     app.run(host="0.0.0.0", port=5000, debug=False)
