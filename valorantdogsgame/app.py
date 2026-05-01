@@ -933,6 +933,13 @@ def login():
 
     return jsonify({"success": True, "username": users[key]["username"]})
 
+@app.route("/debug-all-data")
+def debug_all_data():
+    return jsonify({
+        "leaderboard": load_json(LEADERBOARD_FILE, []),
+        "match_history": load_json(MATCH_HISTORY_FILE, []),
+        "users": load_json(USERS_FILE, {})
+    })
 
 @app.route("/new-game")
 def new_game():
