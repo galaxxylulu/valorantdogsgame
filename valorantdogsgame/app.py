@@ -1893,7 +1893,7 @@ async function loadMessages() {
         box.innerHTML = "";
 
         if (messages.length === 0) {
-            box.innerHTML = "<p class='small'>No messages yet. Say something profoundly stupid.</p>";
+            box.innerHTML = "<p class='small'>No messages yet. Start by typing a racial slur.</p>";
         }
 
         messages.forEach(msg => {
