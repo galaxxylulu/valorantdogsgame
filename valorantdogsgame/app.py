@@ -1047,40 +1047,71 @@ def leaderboard(mode):
     if mode not in ["normal", "pixel", "timer"]:
         mode = "normal"
 
-    season = current_season()
+    raw_entries = load_json(LEADERBOARD_FILE, [])
+    entries = []
 
-    entries = [
-        entry for entry in load_json(LEADERBOARD_FILE, [])
-        if entry.get("mode") == mode and entry.get("season") == season
-    ]
+    for entry in raw_entries:
+        entry_mode = entry.get("mode", "normal")
+
+        if entry_mode != mode:
+            continue
+
+        if "rank_name" not in entry:
+            entry["rank_name"] = entry.get("rank", "Iron Sock Inspector")
+
+        if "rank_tier" not in entry:
+            rank_name = entry["rank_name"].lower()
+
+            if "radiant" in rank_name:
+                entry["rank_tier"] = "radiant"
+            elif "immortal" in rank_name:
+                entry["rank_tier"] = "immortal"
+            elif "ascendant" in rank_name:
+                entry["rank_tier"] = "ascendant"
+            elif "diamond" in rank_name:
+                entry["rank_tier"] = "diamond"
+            elif "plat" in rank_name:
+                entry["rank_tier"] = "platinum"
+            elif "gold" in rank_name:
+                entry["rank_tier"] = "gold"
+            elif "silver" in rank_name:
+                entry["rank_tier"] = "silver"
+            elif "bronze" in rank_name:
+                entry["rank_tier"] = "bronze"
+            else:
+                entry["rank_tier"] = "iron"
+
+        if "seconds" not in entry:
+            entry["seconds"] = None
+
+        entries.append(entry)
 
     best_by_user = {}
 
     for entry in entries:
-        username_key = entry.get("username", "").lower()
+        username_key = entry.get("username", "").strip().lower()
 
-        if username_key not in best_by_user:
+        if username_key == "":
+            continue
+
+        old = best_by_user.get(username_key)
+
+        if old is None:
             best_by_user[username_key] = entry
         else:
-            old = best_by_user[username_key]
-
             if mode != "timer":
                 if entry.get("score", 0) > old.get("score", 0):
                     best_by_user[username_key] = entry
             else:
                 entry_score = entry.get("score", 0)
                 old_score = old.get("score", 0)
+                entry_seconds = entry.get("seconds") or 999999
+                old_seconds = old.get("seconds") or 999999
 
-                entry_seconds = entry.get("seconds")
-                old_seconds = old.get("seconds")
-
-                if entry_score > old_score:
+                if entry_score > old_score or (
+                    entry_score == old_score and entry_seconds < old_seconds
+                ):
                     best_by_user[username_key] = entry
-                elif entry_score == old_score:
-                    if old_seconds is None:
-                        best_by_user[username_key] = entry
-                    elif entry_seconds is not None and entry_seconds < old_seconds:
-                        best_by_user[username_key] = entry
 
     entries = list(best_by_user.values())
 
@@ -1089,7 +1120,7 @@ def leaderboard(mode):
             entries,
             key=lambda x: (
                 -(x.get("score", 0)),
-                x.get("seconds") if x.get("seconds") is not None else 999999
+                x.get("seconds") or 999999
             )
         )
     else:
@@ -1102,7 +1133,7 @@ def leaderboard(mode):
         )
 
     return jsonify({
-        "season": season,
+        "season": "All Time",
         "entries": entries[:20]
     })
 
