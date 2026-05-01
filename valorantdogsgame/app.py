@@ -1179,7 +1179,65 @@ def migrate_old_leaderboard_to_match_history():
 @app.route("/ngrok-skip-browser-warning")
 def skip_warning():
     return home()
+def migrate_old_leaderboard_format():
+    leaderboard = load_json(LEADERBOARD_FILE, [])
+    fixed_entries = []
+
+    for entry in leaderboard:
+        score = int(entry.get("score", 0))
+        mode = entry.get("mode", "normal")
+        seconds = entry.get("seconds", None)
+        season = entry.get("season", current_season())
+
+        rank_tier = entry.get("rank_tier")
+        rank_name = entry.get("rank_name")
+
+        if not rank_tier or not rank_name:
+            rank_tier, rank_name = get_rank(score, mode, seconds)
+
+        fixed_entries.append({
+            "username": entry.get("username", "Anonymous").strip()[:18],
+            "mode": mode,
+            "score": score,
+            "seconds": seconds,
+            "rank_tier": rank_tier,
+            "rank_name": rank_name,
+            "season": season,
+            "time": entry.get("time", datetime.now().isoformat())
+        })
+
+    # remove duplicate users per mode/season
+    best = {}
+
+    for entry in fixed_entries:
+        key = (
+            entry["username"].lower(),
+            entry["mode"],
+            entry["season"]
+        )
+
+        old = best.get(key)
+
+        if old is None:
+            best[key] = entry
+        else:
+            if entry["mode"] != "timer":
+                if entry["score"] > old["score"]:
+                    best[key] = entry
+            else:
+                entry_time = entry["seconds"] or 999999
+                old_time = old["seconds"] or 999999
+
+                if entry["score"] > old["score"]:
+                    best[key] = entry
+                elif entry["score"] == old["score"] and entry_time < old_time:
+                    best[key] = entry
+
+    save_json(LEADERBOARD_FILE, list(best.values()))
+    print("Leaderboard migrated and cleaned.")
+
 
 if __name__ == "__main__":
     migrate_old_leaderboard_to_match_history()
+    migrate_old_leaderboard_format()
     app.run(host="0.0.0.0", port=5000, debug=False)
