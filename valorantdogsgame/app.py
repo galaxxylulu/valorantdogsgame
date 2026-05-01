@@ -28,6 +28,7 @@ LEADERBOARD_FILE = "leaderboard.json"
 MATCH_HISTORY_FILE = "match_history.json"
 RR_FILE = "rr.json"
 FRIENDS_FILE = "friends.json"
+FRIEND_REQUESTS_FILE = "friend_requests.json"
 DAILIES_FILE = "dailies.json"
 MESSAGES_FILE = "messages.json"
 
@@ -1384,8 +1385,11 @@ input {
         <p class="small">Add friends by username</p>
 
         <input id="friendName" placeholder="friend username">
-        <button onclick="addFriend()">Add Friend</button>
+        <button onclick="addFriend()">Send Friend Request</button>
         <p id="friendMessage" class="badge"></p>
+
+        <h3>Friend Requests</h3>
+        <div id="friendRequestRows" class="friend-grid"></div>
 
         <h3>Your Friends</h3>
         <div id="friendsRows" class="friend-grid"></div>
@@ -1927,51 +1931,40 @@ function escapeHTML(text) {
 
 async function sendMessage() {
     const input = document.getElementById("chatInput");
+    const text = input.value.trim();
     const status = document.getElementById("chatStatus");
 
-    if (!input) {
-        alert("Chat input not found. Open Friends → View first.");
-        return;
-    }
-
-    const text = input.value.trim();
-
     if (!currentChatFriend) {
-        alert("Click View on a friend first.");
+        status.innerText = "Click View on an accepted friend first.";
         return;
     }
 
     if (!text) {
-        alert("Type a message first.");
+        status.innerText = "Type a message first.";
         return;
     }
 
-    try {
-        const res = await fetch("/send-message", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                from: currentUser,
-                to: currentChatFriend,
-                message: text
-            })
-        });
+    const res = await fetch("/send-message", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            from: currentUser,
+            to: currentChatFriend,
+            message: text
+        })
+    });
 
-        const data = await res.json();
+    const data = await res.json();
 
-        if (!data.success) {
-            alert("Message failed: " + (data.error || "unknown error"));
-            return;
-        }
-
-        input.value = "";
-        lastMessageCount = -1;
-        await loadMessages();
-        if (status) status.innerText = "Message sent.";
-    } catch (err) {
-        alert("Message failed. Check Flask terminal for errors.");
-        console.error(err);
+    if (!data.success) {
+        status.innerText = data.error || "Message failed to send.";
+        return;
     }
+
+    input.value = "";
+    status.innerText = "Sent.";
+    lastMessageCount = -1;
+    loadMessages();
 }
 
 async function loadMatchHistory(mode) {
@@ -2078,9 +2071,33 @@ async function addFriend() {
 
     const data = await res.json();
 
-    document.getElementById("friendMessage").innerText = data.message || (data.success ? "Friend added." : "Could not add friend.");
+    document.getElementById("friendMessage").innerText = data.message || (data.success ? "Request sent." : "Could not send request.");
     document.getElementById("friendName").value = "";
 
+    loadFriends();
+}
+
+async function acceptFriend(friend) {
+    const res = await fetch("/accept-friend", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({user: currentUser, friend})
+    });
+
+    const data = await res.json();
+    document.getElementById("friendMessage").innerText = data.message || "Friend request accepted.";
+    loadFriends();
+}
+
+async function declineFriend(friend) {
+    const res = await fetch("/decline-friend", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({user: currentUser, friend})
+    });
+
+    const data = await res.json();
+    document.getElementById("friendMessage").innerText = data.message || "Friend request declined.";
     loadFriends();
 }
 
@@ -2091,11 +2108,65 @@ async function removeFriend(friend) {
         body: JSON.stringify({user: currentUser, friend})
     });
 
+    if (currentChatFriend && currentChatFriend.toLowerCase() === friend.toLowerCase()) {
+        currentChatFriend = "";
+        if (chatInterval) clearInterval(chatInterval);
+        document.getElementById("friendProfile").classList.add("hidden");
+    }
+
     loadFriends();
+}
+
+async function loadFriendRequests() {
+    if (!currentUser) return;
+
+    const res = await fetch("/friend-requests/" + encodeURIComponent(currentUser));
+    const data = await res.json();
+
+    const rows = document.getElementById("friendRequestRows");
+    rows.innerHTML = "";
+
+    const incoming = data.incoming || [];
+    const outgoing = data.outgoing || [];
+
+    if (incoming.length === 0 && outgoing.length === 0) {
+        rows.innerHTML = "<p>No pending friend requests.</p>";
+        return;
+    }
+
+    incoming.forEach(req => {
+        const div = document.createElement("div");
+        div.className = "friend-card";
+        div.innerHTML = `
+            <div>
+                <strong>${req.username}</strong>
+                <p class="small">Incoming request | ${req.rank_name} | ${req.rr}/100 RR</p>
+            </div>
+            <button onclick="acceptFriend('${req.username}')">Accept</button>
+            <button onclick="declineFriend('${req.username}')">Decline</button>
+        `;
+        rows.appendChild(div);
+    });
+
+    outgoing.forEach(req => {
+        const div = document.createElement("div");
+        div.className = "friend-card";
+        div.innerHTML = `
+            <div>
+                <strong>${req.username}</strong>
+                <p class="small">Outgoing request | ${req.rank_name} | ${req.rr}/100 RR</p>
+            </div>
+            <span class="small">Pending</span>
+            <button onclick="removeFriend('${req.username}')">Cancel</button>
+        `;
+        rows.appendChild(div);
+    });
 }
 
 async function loadFriends() {
     if (!currentUser) return;
+
+    await loadFriendRequests();
 
     const res = await fetch("/friends/" + encodeURIComponent(currentUser));
     const data = await res.json();
@@ -2104,7 +2175,7 @@ async function loadFriends() {
     rows.innerHTML = "";
 
     if (!data.friends || data.friends.length === 0) {
-        rows.innerHTML = "<p>No friends added yet.</p>";
+        rows.innerHTML = "<p>No accepted friends yet. Send a request or accept one.</p>";
         return;
     }
 
@@ -2593,6 +2664,176 @@ def public_profile(username):
     })
 
 
+
+# =========================
+# FRIEND REQUEST HELPERS
+# =========================
+
+def user_exists(username):
+    username = clean_username(username)
+    key = username.lower()
+
+    users = load_json(USERS_FILE, {})
+    if key in users:
+        return True
+
+    rr_data = load_json(RR_FILE, {})
+    if key in rr_data:
+        return True
+
+    history = load_json(MATCH_HISTORY_FILE, [])
+    return any(
+        isinstance(e, dict) and str(e.get("username", "")).lower() == key
+        for e in history
+    )
+
+
+def display_username(username):
+    username = clean_username(username)
+    key = username.lower()
+    users = load_json(USERS_FILE, {})
+    return users.get(key, {}).get("username", username)
+
+
+def load_friend_map():
+    friends = load_json(FRIENDS_FILE, {})
+    if not isinstance(friends, dict):
+        friends = {}
+
+    fixed = {}
+    for user_key, friend_list in friends.items():
+        user_key = str(user_key).lower()
+        if isinstance(friend_list, list):
+            fixed[user_key] = sorted(set(str(f).lower() for f in friend_list if str(f).strip()))
+        else:
+            fixed[user_key] = []
+
+    return fixed
+
+
+def save_friend_map(friends):
+    fixed = {}
+    for user_key, friend_list in friends.items():
+        fixed[str(user_key).lower()] = sorted(set(str(f).lower() for f in friend_list if str(f).strip()))
+    save_json(FRIENDS_FILE, fixed)
+
+
+def are_friends(user, friend):
+    user_key = clean_username(user).lower()
+    friend_key = clean_username(friend).lower()
+    friends = load_friend_map()
+    return friend_key in friends.get(user_key, []) and user_key in friends.get(friend_key, [])
+
+
+def make_mutual_friends(user, friend):
+    user_key = clean_username(user).lower()
+    friend_key = clean_username(friend).lower()
+    friends = load_friend_map()
+    friends.setdefault(user_key, [])
+    friends.setdefault(friend_key, [])
+
+    if friend_key not in friends[user_key]:
+        friends[user_key].append(friend_key)
+    if user_key not in friends[friend_key]:
+        friends[friend_key].append(user_key)
+
+    save_friend_map(friends)
+
+
+def remove_mutual_friends(user, friend):
+    user_key = clean_username(user).lower()
+    friend_key = clean_username(friend).lower()
+    friends = load_friend_map()
+
+    if user_key in friends:
+        friends[user_key] = [f for f in friends[user_key] if f.lower() != friend_key]
+    if friend_key in friends:
+        friends[friend_key] = [f for f in friends[friend_key] if f.lower() != user_key]
+
+    save_friend_map(friends)
+
+
+def load_friend_requests():
+    requests_data = load_json(FRIEND_REQUESTS_FILE, {})
+    if not isinstance(requests_data, dict):
+        requests_data = {}
+
+    fixed = {}
+    for receiver_key, sender_list in requests_data.items():
+        receiver_key = str(receiver_key).lower()
+        if isinstance(sender_list, list):
+            fixed[receiver_key] = sorted(set(str(s).lower() for s in sender_list if str(s).strip()))
+        else:
+            fixed[receiver_key] = []
+
+    return fixed
+
+
+def save_friend_requests(requests_data):
+    fixed = {}
+    for receiver_key, sender_list in requests_data.items():
+        clean_list = sorted(set(str(s).lower() for s in sender_list if str(s).strip()))
+        if clean_list:
+            fixed[str(receiver_key).lower()] = clean_list
+    save_json(FRIEND_REQUESTS_FILE, fixed)
+
+
+def has_pending_request(sender, receiver):
+    sender_key = clean_username(sender).lower()
+    receiver_key = clean_username(receiver).lower()
+    requests_data = load_friend_requests()
+    return sender_key in requests_data.get(receiver_key, [])
+
+
+def add_pending_request(sender, receiver):
+    sender_key = clean_username(sender).lower()
+    receiver_key = clean_username(receiver).lower()
+    requests_data = load_friend_requests()
+    requests_data.setdefault(receiver_key, [])
+    if sender_key not in requests_data[receiver_key]:
+        requests_data[receiver_key].append(sender_key)
+    save_friend_requests(requests_data)
+
+
+def remove_pending_request(sender, receiver):
+    sender_key = clean_username(sender).lower()
+    receiver_key = clean_username(receiver).lower()
+    requests_data = load_friend_requests()
+    if receiver_key in requests_data:
+        requests_data[receiver_key] = [s for s in requests_data[receiver_key] if s.lower() != sender_key]
+    save_friend_requests(requests_data)
+
+
+def migrate_old_friends_to_request_system():
+    """
+    Old system allowed one-sided friend adds.
+    New system requires mutual acceptance.
+    - If both users had added each other already, keep them as accepted mutual friends.
+    - If only one side added the other, convert that into a pending request.
+    """
+    friends = load_friend_map()
+    requests_data = load_friend_requests()
+    accepted = {}
+
+    for user_key, friend_list in friends.items():
+        for friend_key in friend_list:
+            accepted.setdefault(user_key, [])
+            accepted.setdefault(friend_key, [])
+
+            if user_key in friends.get(friend_key, []):
+                if friend_key not in accepted[user_key]:
+                    accepted[user_key].append(friend_key)
+                if user_key not in accepted[friend_key]:
+                    accepted[friend_key].append(user_key)
+            else:
+                requests_data.setdefault(friend_key, [])
+                if user_key not in requests_data[friend_key]:
+                    requests_data[friend_key].append(user_key)
+
+    save_friend_map(accepted)
+    save_friend_requests(requests_data)
+    print("Friends migrated to request-based system.")
+
 # =========================
 # FRIENDS ROUTES
 # =========================
@@ -2604,41 +2845,63 @@ def add_friend():
     user = clean_username(data.get("user", ""))
     friend = clean_username(data.get("friend", ""))
 
-    if not user or user.lower() == "anonymous":
+    if user.lower() == "anonymous":
         return jsonify({"success": False, "message": "Log in first."})
 
-    if not friend or friend.lower() == "anonymous":
+    if friend.lower() == "anonymous":
         return jsonify({"success": False, "message": "Invalid friend username."})
 
     if user.lower() == friend.lower():
         return jsonify({"success": False, "message": "You cannot add yourself, bestie."})
 
-    users = load_json(USERS_FILE, {})
-
-    # Allow adding users that have history/RR even if not in users.json, because old leaderboard names may not have accounts.
-    known_user = friend.lower() in users or friend.lower() in load_json(RR_FILE, {})
-    if not known_user:
-        history = load_json(MATCH_HISTORY_FILE, [])
-        known_user = any(
-            isinstance(e, dict) and e.get("username", "").lower() == friend.lower()
-            for e in history
-        )
-
-    if not known_user:
+    if not user_exists(friend):
         return jsonify({"success": False, "message": "Could not find that player."})
 
-    friends = load_json(FRIENDS_FILE, {})
-    user_key = user.lower()
-    friend_key = friend.lower()
+    if are_friends(user, friend):
+        return jsonify({"success": True, "message": f"You and {display_username(friend)} are already friends."})
 
-    friends.setdefault(user_key, [])
+    # If they already requested you, your add accepts it instantly.
+    if has_pending_request(friend, user):
+        remove_pending_request(friend, user)
+        make_mutual_friends(user, friend)
+        return jsonify({"success": True, "message": f"Accepted {display_username(friend)}'s friend request."})
 
-    if friend_key not in friends[user_key]:
-        friends[user_key].append(friend_key)
+    if has_pending_request(user, friend):
+        return jsonify({"success": True, "message": f"Request already sent to {display_username(friend)}."})
 
-    save_json(FRIENDS_FILE, friends)
+    add_pending_request(user, friend)
+    return jsonify({"success": True, "message": f"Friend request sent to {display_username(friend)}."})
 
-    return jsonify({"success": True, "message": f"Added {friend}."})
+
+@app.route("/accept-friend", methods=["POST"])
+def accept_friend():
+    data = request.json or {}
+
+    user = clean_username(data.get("user", ""))
+    friend = clean_username(data.get("friend", ""))
+
+    if user.lower() == "anonymous" or friend.lower() == "anonymous":
+        return jsonify({"success": False, "message": "Invalid request."})
+
+    if not has_pending_request(friend, user):
+        return jsonify({"success": False, "message": "No request from that player."})
+
+    remove_pending_request(friend, user)
+    make_mutual_friends(user, friend)
+
+    return jsonify({"success": True, "message": f"You are now friends with {display_username(friend)}."})
+
+
+@app.route("/decline-friend", methods=["POST"])
+def decline_friend():
+    data = request.json or {}
+
+    user = clean_username(data.get("user", ""))
+    friend = clean_username(data.get("friend", ""))
+
+    remove_pending_request(friend, user)
+
+    return jsonify({"success": True, "message": f"Declined {display_username(friend)}'s request."})
 
 
 @app.route("/remove-friend", methods=["POST"])
@@ -2648,14 +2911,9 @@ def remove_friend():
     user = clean_username(data.get("user", ""))
     friend = clean_username(data.get("friend", ""))
 
-    friends = load_json(FRIENDS_FILE, {})
-    user_key = user.lower()
-    friend_key = friend.lower()
-
-    if user_key in friends:
-        friends[user_key] = [f for f in friends[user_key] if f.lower() != friend_key]
-
-    save_json(FRIENDS_FILE, friends)
+    remove_mutual_friends(user, friend)
+    remove_pending_request(user, friend)
+    remove_pending_request(friend, user)
 
     return jsonify({"success": True})
 
@@ -2663,14 +2921,16 @@ def remove_friend():
 @app.route("/friends/<username>")
 def friends(username):
     username = clean_username(username)
-    friends_data = load_json(FRIENDS_FILE, {})
+    friends_data = load_friend_map()
     friend_keys = friends_data.get(username.lower(), [])
 
-    users = load_json(USERS_FILE, {})
     result = []
 
     for friend_key in friend_keys:
-        display_name = users.get(friend_key, {}).get("username", friend_key)
+        if not are_friends(username, friend_key):
+            continue
+
+        display_name = display_username(friend_key)
         p = get_player_rr(display_name)
         rank = p.get("rank", "iron")
 
@@ -2684,6 +2944,42 @@ def friends(username):
         })
 
     return jsonify({"friends": result})
+
+
+@app.route("/friend-requests/<username>")
+def friend_requests(username):
+    username = clean_username(username)
+    user_key = username.lower()
+    requests_data = load_friend_requests()
+
+    incoming_keys = requests_data.get(user_key, [])
+    outgoing_keys = []
+
+    for receiver_key, senders in requests_data.items():
+        if user_key in [s.lower() for s in senders]:
+            outgoing_keys.append(receiver_key)
+
+    incoming = []
+    for sender_key in incoming_keys:
+        p = get_player_rr(display_username(sender_key))
+        rank = p.get("rank", "iron")
+        incoming.append({
+            "username": p.get("username", display_username(sender_key)),
+            "rank_name": RANK_NAMES.get(rank, "Iron Sock Inspector"),
+            "rr": p.get("rr", 50)
+        })
+
+    outgoing = []
+    for receiver_key in outgoing_keys:
+        p = get_player_rr(display_username(receiver_key))
+        rank = p.get("rank", "iron")
+        outgoing.append({
+            "username": p.get("username", display_username(receiver_key)),
+            "rank_name": RANK_NAMES.get(rank, "Iron Sock Inspector"),
+            "rr": p.get("rr", 50)
+        })
+
+    return jsonify({"incoming": incoming, "outgoing": outgoing})
 
 
 # =========================
@@ -2743,17 +3039,22 @@ def send_message():
     receiver = clean_username(data.get("to", ""))
     message = str(data.get("message", "")).strip()
 
-    if sender == "Anonymous" or receiver == "Anonymous" or message == "":
+    if sender.lower() == "anonymous" or receiver.lower() == "anonymous" or message == "":
         return jsonify({
             "success": False,
             "error": "Missing sender, receiver, or message."
         })
 
-    users = load_json(USERS_FILE, {})
-    if receiver.lower() not in users:
+    if not user_exists(receiver):
         return jsonify({
             "success": False,
             "error": "That user does not exist."
+        })
+
+    if not are_friends(sender, receiver):
+        return jsonify({
+            "success": False,
+            "error": "You can only message accepted friends."
         })
 
     messages = load_json(MESSAGES_FILE, [])
@@ -2776,6 +3077,9 @@ def send_message():
 def get_messages(user, friend):
     user = clean_username(user)
     friend = clean_username(friend)
+
+    if not are_friends(user, friend):
+        return jsonify({"messages": []})
 
     messages = load_json(MESSAGES_FILE, [])
     if not isinstance(messages, list):
@@ -2803,5 +3107,7 @@ if __name__ == "__main__":
     migrate_old_match_history_format()
     migrate_old_leaderboard_format()
     rebuild_rr_from_history_if_missing()
+    migrate_old_friends_to_request_system()
 
     app.run(host="0.0.0.0", port=5000, debug=False)
+
