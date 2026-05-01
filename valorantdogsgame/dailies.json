@@ -1,0 +1,24 @@
+{
+    "date": "2026-05-01",
+    "challenges": [
+        {
+            "id": "perfect_pixel",
+            "text": "Get a perfect score in Pixel mode",
+            "mode": "pixel",
+            "target_score": 8
+        },
+        {
+            "id": "flash_6",
+            "text": "Score 6+ in Flash Round",
+            "mode": "flash",
+            "target_score": 6
+        },
+        {
+            "id": "daily_grind",
+            "text": "Play 3 matches today",
+            "mode": "any",
+            "target_games": 3
+        }
+    ],
+    "completed": {}
+}
